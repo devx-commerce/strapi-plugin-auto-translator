@@ -1,0 +1,11 @@
+{
+  "plugin.name": "Auto Translator",
+  "plugin.description": "Automatically translate content across locales using Google Translate",
+  "button.translate": "Translate",
+  "button.translating": "Translating...",
+  "label.selectLocale": "Select target locale",
+  "message.success": "Content translated successfully",
+  "message.error": "Failed to translate content",
+  "message.noLocales": "No locales available",
+  "message.apiKeyMissing": "Google Translate API key is not configured"
+}
