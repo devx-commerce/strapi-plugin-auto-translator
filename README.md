@@ -14,7 +14,62 @@ Automated translation plugin for Strapi v5. Translates content across locales us
 - Handles nested components, dynamic zones, and Blocks editor content
 - Content API routes for programmatic/batch translation
 
+## Prerequisites
+
+- Strapi v5.0.0+
+- Node.js 18-22
+- i18n plugin enabled with at least 2 locales configured
+- GitHub account with access to the `devx-commerce` organization
+
 ## Installation
+
+### Step 1: Configure GitHub Packages authentication
+
+This package is hosted on **GitHub Packages**, which requires a personal access token (PAT) for installation.
+
+**1a. Create a GitHub Personal Access Token (PAT)**
+
+1. Go to [github.com/settings/tokens](https://github.com/settings/tokens) (or Settings > Developer settings > Personal access tokens > Tokens (classic))
+2. Click **"Generate new token (classic)"**
+3. Give it a descriptive name (e.g., `github-packages-read`)
+4. Select the **`read:packages`** scope
+5. Click **Generate token** and copy the token
+
+**1b. Add the token to your shell profile**
+
+Add this line to your `~/.zshrc` (macOS) or `~/.bashrc` (Linux):
+
+```bash
+export GITHUB_TOKEN=ghp_your_token_here
+```
+
+Then reload your shell:
+
+```bash
+source ~/.zshrc   # or source ~/.bashrc
+```
+
+> **Why is this needed?** The project `.npmrc` references `${GITHUB_TOKEN}` to authenticate with GitHub Packages. Without this env var set, `npm install` and `yarn` commands will fail.
+
+**1c. Verify the token is set**
+
+```bash
+echo $GITHUB_TOKEN
+# Should print your token
+```
+
+### Step 2: Add `.npmrc` to your Strapi project
+
+Create or update `.npmrc` in your project root:
+
+```
+@devx-commerce:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+```
+
+> **Note:** This file should be committed to git so all devs share the same registry config. The actual token value comes from each dev's `GITHUB_TOKEN` env var, not from this file.
+
+### Step 3: Install the plugin and a translation provider
 
 ```bash
 # Install the plugin
@@ -26,10 +81,23 @@ npm install openai                      # for OpenAI
 npm install @aws-sdk/client-translate   # for AWS Translate
 ```
 
-> **Note:** You need a `.npmrc` in your project root (or globally) with:
-> ```
-> @devx-commerce:registry=https://npm.pkg.github.com
-> ```
+### Step 4: CI/CD Setup (AWS, GitHub Actions, etc.)
+
+For your deployment pipeline, add `GITHUB_TOKEN` as a secret/environment variable:
+
+- **GitHub Actions:** Add `GITHUB_TOKEN` as a repository secret, or use the built-in `secrets.GITHUB_TOKEN` (ensure it has `read:packages` permission)
+- **AWS CodeBuild:** Add `GITHUB_TOKEN` to the environment variables in your buildspec or CodeBuild project settings
+- **Docker:** Pass as a build arg: `docker build --build-arg GITHUB_TOKEN=$GITHUB_TOKEN .`
+
+Example for a `Dockerfile`:
+
+```dockerfile
+ARG GITHUB_TOKEN
+ENV GITHUB_TOKEN=$GITHUB_TOKEN
+RUN npm install
+# Unset after install so it doesn't leak into the image
+ENV GITHUB_TOKEN=""
+```
 
 ## Configuration
 
@@ -156,10 +224,36 @@ Content-Type: application/json
 | `autoPublish` | `boolean` | `true` | Auto-publish after translation |
 | `mediaSnapshotRestore` | `boolean` | `true` | Enable media relation preservation |
 
-## Releasing
+## Troubleshooting
+
+### `Failed to replace env in config: ${GITHUB_TOKEN}`
+
+Your `GITHUB_TOKEN` environment variable is not set. Follow [Step 1](#step-1-configure-github-packages-authentication) above.
+
+### `E401 Unauthorized` during `npm install`
+
+Your token doesn't have the `read:packages` scope. Regenerate it with that scope enabled.
+
+### `Auto Translator: Provider "openai" requires the "openai" package`
+
+Install the OpenAI SDK: `npm install openai`
+
+### `Auto Translator: Provider "openai" selected but no API key configured`
+
+Set `OPENAI_API_KEY` in your `.env` file.
+
+### Blank entries created but no translation
+
+Ensure the plugin version is **1.2.0+**. Earlier versions had a bundling issue where provider code was not included in the compiled output. Update with:
 
 ```bash
-# 1. Build
+npm update @devx-commerce/strapi-plugin-auto-translator
+```
+
+## Releasing (for plugin maintainers)
+
+```bash
+# 1. Make your changes and build
 npm run build
 
 # 2. Bump version + tag
@@ -170,15 +264,10 @@ git push --follow-tags
 GitHub Actions will automatically publish to GitHub Packages when a `v*` tag is pushed.
 
 Consumer projects update with:
+
 ```bash
 npm update @devx-commerce/strapi-plugin-auto-translator
 ```
-
-## Requirements
-
-- Strapi v5.0.0+
-- Node.js 18-22
-- i18n plugin enabled with at least 2 locales configured
 
 ## License
 
