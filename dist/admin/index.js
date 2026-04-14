@@ -2862,30 +2862,30 @@ function invariant(condition, message, Err) {
     throw new Err(message);
   }
 }
-var defaultErrorHandler$1 = function(error) {
+var defaultErrorHandler = function(error) {
   if (process.env.NODE_ENV !== "production") {
     console.error(error);
   }
 };
-var defaultWarnHandler$1 = function(warning2) {
+var defaultWarnHandler = function(warning2) {
   if (process.env.NODE_ENV !== "production") {
     console.warn(warning2);
   }
 };
-var DEFAULT_INTL_CONFIG$1 = {
+var DEFAULT_INTL_CONFIG = {
   formats: {},
   messages: {},
   timeZone: void 0,
   defaultLocale: "en",
   defaultFormats: {},
   fallbackOnEmptyString: true,
-  onError: defaultErrorHandler$1,
-  onWarn: defaultWarnHandler$1
+  onError: defaultErrorHandler,
+  onWarn: defaultWarnHandler
 };
-function invariantIntlContext$1(intl) {
+function invariantIntlContext(intl) {
   invariant(intl, "[React Intl] Could not find required `intl` object. <IntlProvider> needs to exist in the component ancestry.");
 }
-__assign(__assign({}, DEFAULT_INTL_CONFIG$1), { textComponent: React__namespace.Fragment });
+__assign(__assign({}, DEFAULT_INTL_CONFIG), { textComponent: React__namespace.Fragment });
 function shallowEqual(objA, objB) {
   if (objA === objB) {
     return true;
@@ -2907,44 +2907,44 @@ function shallowEqual(objA, objB) {
   }
   return true;
 }
-var IntlContext$1 = typeof window !== "undefined" && !window.__REACT_INTL_BYPASS_GLOBAL_CONTEXT__ ? window.__REACT_INTL_CONTEXT__ || (window.__REACT_INTL_CONTEXT__ = React__namespace.createContext(null)) : React__namespace.createContext(null);
-IntlContext$1.Consumer;
-IntlContext$1.Provider;
-var Context$1 = IntlContext$1;
-function useIntl$1() {
-  var intl = React__namespace.useContext(Context$1);
-  invariantIntlContext$1(intl);
+var IntlContext = typeof window !== "undefined" && !window.__REACT_INTL_BYPASS_GLOBAL_CONTEXT__ ? window.__REACT_INTL_CONTEXT__ || (window.__REACT_INTL_CONTEXT__ = React__namespace.createContext(null)) : React__namespace.createContext(null);
+IntlContext.Consumer;
+IntlContext.Provider;
+var Context = IntlContext;
+function useIntl() {
+  var intl = React__namespace.useContext(Context);
+  invariantIntlContext(intl);
   return intl;
 }
-var DisplayName$1;
+var DisplayName;
 (function(DisplayName2) {
   DisplayName2["formatDate"] = "FormattedDate";
   DisplayName2["formatTime"] = "FormattedTime";
   DisplayName2["formatNumber"] = "FormattedNumber";
   DisplayName2["formatList"] = "FormattedList";
   DisplayName2["formatDisplayName"] = "FormattedDisplayName";
-})(DisplayName$1 || (DisplayName$1 = {}));
-var DisplayNameParts$1;
+})(DisplayName || (DisplayName = {}));
+var DisplayNameParts;
 (function(DisplayNameParts2) {
   DisplayNameParts2["formatDate"] = "FormattedDateParts";
   DisplayNameParts2["formatTime"] = "FormattedTimeParts";
   DisplayNameParts2["formatNumber"] = "FormattedNumberParts";
   DisplayNameParts2["formatList"] = "FormattedListParts";
-})(DisplayNameParts$1 || (DisplayNameParts$1 = {}));
-function createFormattedDateTimePartsComponent$1(name) {
+})(DisplayNameParts || (DisplayNameParts = {}));
+function createFormattedDateTimePartsComponent(name) {
   var ComponentParts = function(props) {
-    var intl = useIntl$1();
+    var intl = useIntl();
     var value = props.value, children = props.children, formatProps = __rest(props, ["value", "children"]);
     var date2 = typeof value === "string" ? new Date(value || 0) : value;
     var formattedParts = name === "formatDate" ? intl.formatDateToParts(date2, formatProps) : intl.formatTimeToParts(date2, formatProps);
     return children(formattedParts);
   };
-  ComponentParts.displayName = DisplayNameParts$1[name];
+  ComponentParts.displayName = DisplayNameParts[name];
   return ComponentParts;
 }
-function createFormattedComponent$1(name) {
+function createFormattedComponent(name) {
   var Component = function(props) {
-    var intl = useIntl$1();
+    var intl = useIntl();
     var value = props.value, children = props.children, formatProps = __rest(
       props,
       ["value", "children"]
@@ -2956,7 +2956,7 @@ function createFormattedComponent$1(name) {
     var Text = intl.textComponent || React__namespace.Fragment;
     return React__namespace.createElement(Text, null, formattedValue);
   };
-  Component.displayName = DisplayName$1[name];
+  Component.displayName = DisplayName[name];
   return Component;
 }
 function areEqual(prevProps, nextProps) {
@@ -2965,7 +2965,7 @@ function areEqual(prevProps, nextProps) {
   return shallowEqual(nextValues, values) && shallowEqual(otherProps, nextOtherProps);
 }
 function FormattedMessage(props) {
-  var intl = useIntl$1();
+  var intl = useIntl();
   var formatMessage = intl.formatMessage, _a = intl.textComponent, Text = _a === void 0 ? React__namespace.Fragment : _a;
   var id = props.id, description = props.description, defaultMessage = props.defaultMessage, values = props.values, children = props.children, _b = props.tagName, Component = _b === void 0 ? Text : _b, ignoreTag = props.ignoreTag;
   var descriptor = { id, description, defaultMessage };
@@ -2983,13 +2983,13 @@ function FormattedMessage(props) {
 FormattedMessage.displayName = "FormattedMessage";
 var MemoizedFormattedMessage = React__namespace.memo(FormattedMessage, areEqual);
 MemoizedFormattedMessage.displayName = "MemoizedFormattedMessage";
-createFormattedComponent$1("formatDate");
-createFormattedComponent$1("formatTime");
-createFormattedComponent$1("formatNumber");
-createFormattedComponent$1("formatList");
-createFormattedComponent$1("formatDisplayName");
-createFormattedDateTimePartsComponent$1("formatDate");
-createFormattedDateTimePartsComponent$1("formatTime");
+createFormattedComponent("formatDate");
+createFormattedComponent("formatTime");
+createFormattedComponent("formatNumber");
+createFormattedComponent("formatList");
+createFormattedComponent("formatDisplayName");
+createFormattedDateTimePartsComponent("formatDate");
+createFormattedDateTimePartsComponent("formatTime");
 function __insertCSS(code) {
   if (typeof document == "undefined") return;
   let head = document.head || document.getElementsByTagName("head")[0];
@@ -17502,7 +17502,7 @@ const createStepComponents = (tourName) => ({
     });
   },
   Content: (props) => {
-    const { formatMessage } = useIntl$1();
+    const { formatMessage } = useIntl();
     let content = "";
     if (!("children" in props)) {
       content = formatMessage({
@@ -25202,89 +25202,6 @@ objectType({
     booleanType()
   ])
 });
-var defaultErrorHandler = function(error) {
-  if (process.env.NODE_ENV !== "production") {
-    console.error(error);
-  }
-};
-var defaultWarnHandler = function(warning2) {
-  if (process.env.NODE_ENV !== "production") {
-    console.warn(warning2);
-  }
-};
-var DEFAULT_INTL_CONFIG = {
-  formats: {},
-  messages: {},
-  timeZone: void 0,
-  defaultLocale: "en",
-  defaultFormats: {},
-  fallbackOnEmptyString: true,
-  onError: defaultErrorHandler,
-  onWarn: defaultWarnHandler
-};
-function invariantIntlContext(intl) {
-  invariant(intl, "[React Intl] Could not find required `intl` object. <IntlProvider> needs to exist in the component ancestry.");
-}
-__assign(__assign({}, DEFAULT_INTL_CONFIG), { textComponent: React__namespace.Fragment });
-var IntlContext = typeof window !== "undefined" && !window.__REACT_INTL_BYPASS_GLOBAL_CONTEXT__ ? window.__REACT_INTL_CONTEXT__ || (window.__REACT_INTL_CONTEXT__ = React__namespace.createContext(null)) : React__namespace.createContext(null);
-IntlContext.Consumer;
-IntlContext.Provider;
-var Context = IntlContext;
-function useIntl() {
-  var intl = React__namespace.useContext(Context);
-  invariantIntlContext(intl);
-  return intl;
-}
-var DisplayName;
-(function(DisplayName2) {
-  DisplayName2["formatDate"] = "FormattedDate";
-  DisplayName2["formatTime"] = "FormattedTime";
-  DisplayName2["formatNumber"] = "FormattedNumber";
-  DisplayName2["formatList"] = "FormattedList";
-  DisplayName2["formatDisplayName"] = "FormattedDisplayName";
-})(DisplayName || (DisplayName = {}));
-var DisplayNameParts;
-(function(DisplayNameParts2) {
-  DisplayNameParts2["formatDate"] = "FormattedDateParts";
-  DisplayNameParts2["formatTime"] = "FormattedTimeParts";
-  DisplayNameParts2["formatNumber"] = "FormattedNumberParts";
-  DisplayNameParts2["formatList"] = "FormattedListParts";
-})(DisplayNameParts || (DisplayNameParts = {}));
-function createFormattedDateTimePartsComponent(name) {
-  var ComponentParts = function(props) {
-    var intl = useIntl();
-    var value = props.value, children = props.children, formatProps = __rest(props, ["value", "children"]);
-    var date2 = typeof value === "string" ? new Date(value || 0) : value;
-    var formattedParts = name === "formatDate" ? intl.formatDateToParts(date2, formatProps) : intl.formatTimeToParts(date2, formatProps);
-    return children(formattedParts);
-  };
-  ComponentParts.displayName = DisplayNameParts[name];
-  return ComponentParts;
-}
-function createFormattedComponent(name) {
-  var Component = function(props) {
-    var intl = useIntl();
-    var value = props.value, children = props.children, formatProps = __rest(
-      props,
-      ["value", "children"]
-    );
-    var formattedValue = intl[name](value, formatProps);
-    if (typeof children === "function") {
-      return children(formattedValue);
-    }
-    var Text = intl.textComponent || React__namespace.Fragment;
-    return React__namespace.createElement(Text, null, formattedValue);
-  };
-  Component.displayName = DisplayName[name];
-  return Component;
-}
-createFormattedComponent("formatDate");
-createFormattedComponent("formatTime");
-createFormattedComponent("formatNumber");
-createFormattedComponent("formatList");
-createFormattedComponent("formatDisplayName");
-createFormattedDateTimePartsComponent("formatDate");
-createFormattedDateTimePartsComponent("formatTime");
 const getTrad = (id) => `${PLUGIN_ID}.${id}`;
 const TranslateButton = ({
   contentType,
@@ -25557,7 +25474,7 @@ const index = {
     const { locales } = app;
     const importedTranslations = await Promise.all(
       locales.map((locale) => {
-        return __variableDynamicImportRuntimeHelper(/* @__PURE__ */ Object.assign({ "./translations/en.json": () => Promise.resolve().then(() => require("../_chunks/en-CpxfvKIA.js")) }), `./translations/${locale}.json`, 3).then(({ default: data }) => {
+        return __variableDynamicImportRuntimeHelper(/* @__PURE__ */ Object.assign({ "./translations/en.json": () => Promise.resolve().then(() => require("../_chunks/en-CQxerH5u.js")) }), `./translations/${locale}.json`, 3).then(({ default: data }) => {
           return {
             data: Object.keys(data).reduce((acc, key) => {
               acc[`${PLUGIN_ID}.${key}`] = data[key];
