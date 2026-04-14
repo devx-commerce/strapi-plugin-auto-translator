@@ -19,7 +19,19 @@ interface OpenAIConfig {
 }
 
 export function createOpenAIProvider(config: OpenAIConfig): TranslationProvider {
-  const { OpenAI } = require('openai');
+  let OpenAI: any;
+  try {
+    OpenAI = require('openai').OpenAI;
+  } catch (err: any) {
+    if (err.code === 'MODULE_NOT_FOUND') {
+      throw new Error(
+        'Auto Translator: Provider "openai" requires the "openai" package. ' +
+        'Install it with: npm install openai'
+      );
+    }
+    throw err;
+  }
+
   const client = new OpenAI({ apiKey: config.apiKey });
 
   const model = config.model || 'gpt-4o-mini';

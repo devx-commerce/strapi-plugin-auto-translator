@@ -23,43 +23,27 @@ export interface ProviderConfig {
   };
 }
 
+// Import provider factories directly so the bundler can inline them.
+// The external SDK require() calls (openai, @aws-sdk/client-translate)
+// stay inside each provider function and are resolved at runtime.
+import { createOpenAIProvider } from './openai';
+import { createAWSProvider } from './aws';
+
 /**
  * Create a translation provider based on the plugin configuration.
- * Lazily loads the SDK so only the chosen provider's dependency is required.
+ * The external SDK packages (openai, @aws-sdk/client-translate) are
+ * loaded lazily inside each provider factory, so only the chosen
+ * provider's dependency needs to be installed.
  */
 export function createProvider(config: ProviderConfig): TranslationProvider {
   const provider = config.translationProvider || 'openai';
 
   switch (provider) {
-    case 'aws': {
-      try {
-        const { createAWSProvider } = require('./aws');
-        return createAWSProvider(config.aws);
-      } catch (err: any) {
-        if (err.code === 'MODULE_NOT_FOUND') {
-          throw new Error(
-            `Auto Translator: Provider "aws" requires the "@aws-sdk/client-translate" package. ` +
-            `Install it with: npm install @aws-sdk/client-translate`
-          );
-        }
-        throw err;
-      }
-    }
+    case 'aws':
+      return createAWSProvider(config.aws);
 
-    case 'openai': {
-      try {
-        const { createOpenAIProvider } = require('./openai');
-        return createOpenAIProvider(config.openai);
-      } catch (err: any) {
-        if (err.code === 'MODULE_NOT_FOUND') {
-          throw new Error(
-            `Auto Translator: Provider "openai" requires the "openai" package. ` +
-            `Install it with: npm install openai`
-          );
-        }
-        throw err;
-      }
-    }
+    case 'openai':
+      return createOpenAIProvider(config.openai);
 
     default:
       throw new Error(

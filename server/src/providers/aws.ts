@@ -7,7 +7,21 @@ interface AWSConfig {
 }
 
 export function createAWSProvider(config: AWSConfig): TranslationProvider {
-  const { TranslateClient, TranslateTextCommand } = require('@aws-sdk/client-translate');
+  let TranslateClient: any;
+  let TranslateTextCommand: any;
+  try {
+    const awsModule = require('@aws-sdk/client-translate');
+    TranslateClient = awsModule.TranslateClient;
+    TranslateTextCommand = awsModule.TranslateTextCommand;
+  } catch (err: any) {
+    if (err.code === 'MODULE_NOT_FOUND') {
+      throw new Error(
+        'Auto Translator: Provider "aws" requires the "@aws-sdk/client-translate" package. ' +
+        'Install it with: npm install @aws-sdk/client-translate'
+      );
+    }
+    throw err;
+  }
 
   const clientOptions: any = {
     region: config.region || 'us-east-1',
