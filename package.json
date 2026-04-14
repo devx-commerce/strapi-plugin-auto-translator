@@ -1,6 +1,6 @@
 {
   "name": "@devx-commerce/strapi-plugin-auto-translator",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Automated translation plugin for Strapi v5 — supports OpenAI and AWS Translate providers",
   "repository": {
     "type": "git",
