@@ -4,76 +4,15 @@ import {
   getFieldType,
   buildDeepPopulate,
 } from "../utils";
-import type { AutoTranslatorConfig } from "../config";
+import { createProvider } from "../providers";
+import type { TranslationProvider } from "../providers";
 
-/**
- * Generic translation provider interface.
- * Both AWS and OpenAI adapters implement this.
- */
-interface TranslationProvider {
-  translateText: (text: string, sourceLang: string, targetLang: string) => Promise<string>;
-  translateHtml: (html: string, sourceLang: string, targetLang: string) => Promise<string>;
-}
-
-function createOpenAIProvider(apiKey: string, model: string, temperature: number): TranslationProvider {
-  const { OpenAI } = require('openai');
-  const client = new OpenAI({ apiKey });
-
-  const translate = async (
-    text: string,
-    sourceLang: string,
-    targetLang: string,
-    isHtml = false,
-  ): Promise<string> => {
-    if (!text || text.trim() === '') return text;
-    const systemPrompt = isHtml
-      ? `You are a professional translator. Translate the HTML content from ${sourceLang} to ${targetLang}. Preserve all HTML tags exactly as-is. Return only the translated HTML, no explanations.`
-      : `You are a professional translator. Translate the following text from ${sourceLang} to ${targetLang}. Return only the translated text, no explanations.`;
-
-    const response = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: text },
-      ],
-      temperature,
-    });
-    return response.choices[0]?.message?.content?.trim() ?? text;
-  };
-
-  return {
-    translateText: (text, src, tgt) => translate(text, src, tgt, false),
-    translateHtml: (html, src, tgt) => translate(html, src, tgt, true),
-  };
-}
-
-function createAWSProvider(region: string, accessKeyId: string, secretAccessKey: string): TranslationProvider {
-  const { TranslateClient, TranslateTextCommand } = require('@aws-sdk/client-translate');
-  const client = new TranslateClient({
-    region,
-    credentials: {
-      accessKeyId,
-      secretAccessKey,
-    },
-  });
-
-  return {
-    translateText: async (text, src, tgt) => {
-      const cmd = new TranslateTextCommand({ Text: text, SourceLanguageCode: src, TargetLanguageCode: tgt });
-      const res = await client.send(cmd);
-      return res.TranslatedText;
-    },
-    translateHtml: async (html, src, tgt) => {
-      const cmd = new TranslateTextCommand({ Text: html, SourceLanguageCode: src, TargetLanguageCode: tgt, TextType: 'HTML' });
-      const res = await client.send(cmd);
-      return res.TranslatedText;
-    },
-  };
-}
+/** Regex to detect field names that contain the word "url" (case-insensitive). */
+const URL_FIELD_REGEX = /url/i;
 
 /** Returns true if the field should be excluded from translation. */
-function isExcludedField(fieldName: string, excludedSet: Set<string>, patterns: RegExp[]): boolean {
-  return excludedSet.has(fieldName) || patterns.some(p => p.test(fieldName));
+function isExcludedField(fieldName: string, excludedSet: Set<string>): boolean {
+  return excludedSet.has(fieldName) || URL_FIELD_REGEX.test(fieldName);
 }
 
 const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
@@ -458,7 +397,7 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
 
   /**
    * Translate content using the configured provider (openai by default, aws as fallback).
-   * Configure via config/plugins.ts under the "auto-translator" key.
+   * Switch providers via TRANSLATION_PROVIDER env var: 'openai' | 'aws'
    */
   async translateContent(
     content: any,
@@ -466,32 +405,25 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
     targetLocale: string,
   ) {
     try {
-      const config = strapi.config.get('plugin::auto-translator') as AutoTranslatorConfig;
-      const provider = config.translationProvider;
+      const config = strapi.config.get('plugin::auto-translator') as any;
 
-      strapi.log.info(`Auto Translator: Using provider: ${provider}`);
+      strapi.log.info(`Auto Translator: Using provider: ${config?.translationProvider || 'openai'}`);
 
-      let translateClient: TranslationProvider;
-      if (provider === 'aws') {
-        const region = config.aws?.region || process.env.AWS_REGION || 'us-east-1';
-        const accessKeyId = config.aws?.accessKeyId || process.env.AWS_ACCESS_KEY_ID || '';
-        const secretAccessKey = config.aws?.secretAccessKey || process.env.AWS_ACCESS_SECRET || '';
-        translateClient = createAWSProvider(region, accessKeyId, secretAccessKey);
-      } else {
-        const apiKey = config.openai?.apiKey || process.env.OPENAI_API_KEY || '';
-        const model = config.openai?.model || 'gpt-4o-mini';
-        const temperature = config.openai?.temperature ?? 0.1;
-        translateClient = createOpenAIProvider(apiKey, model, temperature);
-      }
+      const translateClient: TranslationProvider = createProvider({
+        translationProvider: config?.translationProvider || 'openai',
+        openai: config?.openai || {},
+        aws: config?.aws || {},
+      });
 
       // Clone the content structure
       const translatedContent = JSON.parse(JSON.stringify(content));
 
       // Fields to skip (handles, slugs, URLs stay as-is)
+      const doNotTranslateFields =
+        config?.doNotTranslateFields ?? ['handle', 'slug', 'url', 'href'];
       const excludedFieldNames = new Set(
-        Array.isArray(config.doNotTranslateFields) ? config.doNotTranslateFields : [],
+        Array.isArray(doNotTranslateFields) ? doNotTranslateFields : [],
       );
-      const excludedPatterns = (config.doNotTranslateFieldPatterns ?? []).map(p => new RegExp(p));
 
       // Translate all fields
       await this.translateFields(
@@ -500,7 +432,6 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
         sourceLocale,
         targetLocale,
         excludedFieldNames,
-        excludedPatterns,
       );
 
       return translatedContent;
@@ -513,7 +444,6 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
   /**
    * Recursively translate fields in the content structure.
    * @param excludedFieldNames - Set of field names to skip (e.g. handle, slug, url, href).
-   * @param excludedPatterns - Compiled RegExp patterns; any matching field name is excluded.
    */
   async translateFields(
     fields: any,
@@ -521,7 +451,6 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
     sourceLocale: string,
     targetLocale: string,
     excludedFieldNames: Set<string> = new Set(),
-    excludedPatterns: RegExp[] = [],
   ) {
     for (const [fieldName, fieldData] of Object.entries(fields)) {
       const data = fieldData as any;
@@ -535,7 +464,7 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
         case "text":
         case "email":
           // Skip excluded fields (handle, slug, url, href, etc.)
-          if (isExcludedField(fieldName, excludedFieldNames, excludedPatterns)) {
+          if (isExcludedField(fieldName, excludedFieldNames)) {
             break;
           }
           // Translate simple text fields
@@ -550,7 +479,7 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
           break;
 
         case "richtext":
-          if (isExcludedField(fieldName, excludedFieldNames, excludedPatterns)) {
+          if (isExcludedField(fieldName, excludedFieldNames)) {
             break;
           }
           // Translate rich text (preserve HTML)
@@ -587,7 +516,6 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
                   sourceLocale,
                   targetLocale,
                   excludedFieldNames,
-                  excludedPatterns,
                 );
               }
             }
@@ -605,7 +533,6 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
                   sourceLocale,
                   targetLocale,
                   excludedFieldNames,
-                  excludedPatterns,
                 );
               }
             }
@@ -617,7 +544,6 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
               sourceLocale,
               targetLocale,
               excludedFieldNames,
-              excludedPatterns,
             );
           }
           break;
@@ -936,20 +862,26 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
           !localizableFields.includes(fieldName) &&
           sourceEntity[fieldName] !== undefined
         ) {
-          dataToSave[fieldName] = sourceEntity[fieldName];
+          const fieldSchema = contentTypeSchema.attributes[fieldName] as any;
+          if (fieldSchema?.type === 'media') {
+            // Skip media fields in data payload — Strapi v5 update() can't handle
+            // media IDs and will disconnect existing relations on other locales.
+            // Media is copied via copyMediaRelations() after save instead.
+            continue;
+          } else {
+            dataToSave[fieldName] = sourceEntity[fieldName];
+          }
         }
       }
 
-      // Ensure "do not translate" fields (handle, slug, url, href, etc.) are always
+      // Ensure "do not translate" fields (handle, slug, url, href) are always
       // populated from the source locale — same value as source, not translated
-      const config = strapi.config.get("plugin::auto-translator") as AutoTranslatorConfig;
-      const excludedNames: string[] = Array.isArray(config.doNotTranslateFields)
-        ? config.doNotTranslateFields
+      const config = strapi.config.get("plugin::auto-translator") as any;
+      const doNotTranslateFields =
+        config?.doNotTranslateFields ?? ["handle", "slug", "url", "href"];
+      const excludedNames = Array.isArray(doNotTranslateFields)
+        ? doNotTranslateFields
         : [];
-      const excludedPatterns: RegExp[] = (config.doNotTranslateFieldPatterns ?? []).map(
-        p => new RegExp(p)
-      );
-
       for (const fieldName of excludedNames) {
         if (
           sourceEntity[fieldName] !== undefined &&
@@ -959,9 +891,9 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
         }
       }
 
-      // Also copy any field whose name matches an excluded pattern from source
+      // Also copy any field whose name contains "url" from source (not already handled above)
       for (const fieldName of Object.keys(contentTypeSchema.attributes || {})) {
-        if (!excludedNames.includes(fieldName) && excludedPatterns.some(p => p.test(fieldName))) {
+        if (!excludedNames.includes(fieldName) && URL_FIELD_REGEX.test(fieldName)) {
           if (sourceEntity[fieldName] !== undefined) {
             dataToSave[fieldName] = sourceEntity[fieldName];
           }
@@ -1008,6 +940,9 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
         });
       }
 
+      // Media is handled by restoreMediaForAllRows() in the controller after publish.
+      // We skip draft media here to avoid marking entries as "Modified".
+
       return savedEntity;
     } catch (error) {
       strapi.log.error(
@@ -1015,6 +950,236 @@ const translatorService = ({ strapi }: { strapi: Core.Strapi }) => ({
         error,
       );
       throw error;
+    }
+  },
+
+  /**
+   * Snapshot media file_ids for a document BEFORE translation starts.
+   * Returns a map of { fieldName: file_id[] } so we can restore after Strapi
+   * deletes/recreates rows and loses files_related_mph entries.
+   */
+  async snapshotMediaFileIds(contentType: string, documentId: string): Promise<Record<string, number[]>> {
+    const snapshot: Record<string, number[]> = {};
+    try {
+      const contentTypeSchema = strapi.contentType(contentType as any);
+      if (!contentTypeSchema) return snapshot;
+
+      const collectionName = (contentTypeSchema as Record<string, unknown>).collectionName as string;
+      if (!collectionName) return snapshot;
+
+      const knex = strapi.db.connection;
+      const relatedType = contentType;
+      const localizableFields = getLocalizableFields(contentTypeSchema);
+
+      // Get all row IDs for this document
+      const rows = await knex.raw(
+        `SELECT id FROM "${collectionName}" WHERE document_id = ?`,
+        [documentId]
+      );
+      if (!rows?.rows?.length) return snapshot;
+
+      for (const [fieldName, fieldDef] of Object.entries(contentTypeSchema.attributes as Record<string, Record<string, unknown>>)) {
+        if ((fieldDef as Record<string, unknown>).type !== 'media') continue;
+        if (localizableFields.includes(fieldName)) continue;
+
+        for (const row of rows.rows) {
+          const rels = await knex.raw(
+            `SELECT file_id FROM files_related_mph WHERE related_id = ? AND related_type = ? AND field = ?`,
+            [row.id, relatedType, fieldName]
+          );
+          if (rels?.rows?.length > 0) {
+            snapshot[fieldName] = rels.rows.map((r: Record<string, unknown>) => r.file_id as number);
+            break; // one source is enough
+          }
+        }
+      }
+
+      if (Object.keys(snapshot).length > 0) {
+        strapi.log.info(`Auto Translator: Snapshot media for ${contentType} doc ${documentId}: ${JSON.stringify(snapshot)}`);
+      }
+    } catch (err) {
+      strapi.log.warn(`Auto Translator: snapshotMediaFileIds error: ${(err as Error).message}`);
+    }
+    return snapshot;
+  },
+
+  /**
+   * Restore media relations on PUBLISHED rows for a document.
+   * Uses the pre-translation snapshot as source if no existing row has media.
+   * Only targets published rows to avoid marking drafts as "Modified".
+   */
+  async restoreMediaForAllRows(
+    contentType: string, documentId: string, _sourceLocale: string,
+    mediaSnapshot?: Record<string, number[]>,
+  ) {
+    try {
+      const contentTypeSchema = strapi.contentType(contentType as any);
+      if (!contentTypeSchema) return;
+
+      const collectionName = (contentTypeSchema as Record<string, unknown>).collectionName as string;
+      if (!collectionName) return;
+
+      const knex = strapi.db.connection;
+      const relatedType = contentType;
+
+      const localizableFields = getLocalizableFields(contentTypeSchema);
+      const mediaFields: string[] = [];
+      for (const [fieldName, fieldDef] of Object.entries(contentTypeSchema.attributes as Record<string, Record<string, unknown>>)) {
+        if ((fieldDef as Record<string, unknown>).type === 'media' && !localizableFields.includes(fieldName)) {
+          mediaFields.push(fieldName);
+        }
+      }
+      if (mediaFields.length === 0) return;
+
+      // Only restore on published rows to keep draft state clean
+      const allRows = await knex.raw(
+        `SELECT id FROM "${collectionName}" WHERE document_id = ? AND published_at IS NOT NULL`,
+        [documentId]
+      );
+      if (!allRows?.rows?.length) return;
+
+      for (const field of mediaFields) {
+        // Try to find file_ids from existing rows first
+        let fileIds: number[] = [];
+        for (const row of allRows.rows) {
+          const rels = await knex.raw(
+            `SELECT file_id FROM files_related_mph WHERE related_id = ? AND related_type = ? AND field = ?`,
+            [row.id, relatedType, field]
+          );
+          if (rels?.rows?.length > 0) {
+            fileIds = rels.rows.map((r: Record<string, unknown>) => r.file_id as number);
+            break;
+          }
+        }
+
+        // Fall back to snapshot if no row has media (all were lost)
+        if (fileIds.length === 0 && mediaSnapshot?.[field]?.length) {
+          fileIds = mediaSnapshot[field];
+          strapi.log.info(`Auto Translator: Using snapshot for "${field}" — file_ids: ${JSON.stringify(fileIds)}`);
+        }
+
+        if (fileIds.length === 0) continue;
+
+        for (const row of allRows.rows) {
+          const existing = await knex.raw(
+            `SELECT id FROM files_related_mph WHERE related_id = ? AND related_type = ? AND field = ?`,
+            [row.id, relatedType, field]
+          );
+          if (existing?.rows?.length > 0) continue;
+
+          const maxOrder = await knex.raw(`SELECT COALESCE(MAX("order"), 0) as max_order FROM files_related_mph`);
+          let nextOrder = ((maxOrder?.rows?.[0]?.max_order as number) || 0) + 1;
+
+          for (const fileId of fileIds) {
+            await knex.raw(
+              `INSERT INTO files_related_mph (file_id, related_id, related_type, field, "order") VALUES (?, ?, ?, ?, ?)`,
+              [fileId, row.id, relatedType, field, nextOrder++]
+            );
+          }
+        }
+        strapi.log.info(`Auto Translator: Restored media "${field}" on published rows for ${contentType} document ${documentId}`);
+      }
+    } catch (err) {
+      strapi.log.warn(`Auto Translator: restoreMediaForAllRows error: ${(err as Error).message}`);
+    }
+  },
+
+  /**
+   * Copy media file relations from source entity to target entity via raw DB.
+   * Strapi v5 Document Service update() silently ignores media IDs in data,
+   * so we insert files_related_mph rows directly.
+   *
+   * We look for media on the PUBLISHED source row first (draft rows may not
+   * have the relation), then fall back to the draft row.
+   */
+  async copyMediaRelations(
+    contentType: string,
+    sourceEntity: Record<string, unknown>,
+    targetEntity: Record<string, unknown>,
+  ) {
+    try {
+      const contentTypeSchema = strapi.contentType(contentType as any);
+      if (!contentTypeSchema) return;
+
+      const collectionName = (contentTypeSchema as Record<string, unknown>).collectionName as string;
+      if (!collectionName) return;
+
+      const localizableFields = getLocalizableFields(contentTypeSchema);
+      const relatedType = contentType; // e.g. "api::application.application"
+
+      for (const [fieldName, fieldDef] of Object.entries(contentTypeSchema.attributes as Record<string, Record<string, unknown>>)) {
+        if ((fieldDef as Record<string, unknown>).type !== 'media') continue;
+        if (localizableFields.includes(fieldName)) continue; // only copy non-localized media
+
+        const targetId = targetEntity.id;
+        if (!targetId) continue;
+
+        // Check if target already has this media relation
+        const existingTarget = await strapi.db.connection.raw(
+          `SELECT id FROM files_related_mph WHERE related_id = ? AND related_type = ? AND field = ?`,
+          [targetId, relatedType, fieldName]
+        );
+
+        if (existingTarget?.rows?.length > 0) continue; // already has media
+
+        // Find the published source row for this document+locale to get the media relation
+        // (draft rows often don't have the files_related_mph entry)
+        const sourceDocId = sourceEntity.documentId as string;
+        const sourceLocale = sourceEntity.locale as string || 'en';
+
+        // Get published row ID for source locale
+        const publishedSource = await strapi.db.connection.raw(
+          `SELECT id FROM "${collectionName}" WHERE document_id = ? AND locale = ? AND published_at IS NOT NULL LIMIT 1`,
+          [sourceDocId, sourceLocale]
+        );
+
+        // Also try draft row as fallback
+        const draftSource = await strapi.db.connection.raw(
+          `SELECT id FROM "${collectionName}" WHERE document_id = ? AND locale = ? AND published_at IS NULL LIMIT 1`,
+          [sourceDocId, sourceLocale]
+        );
+
+        // Try published first, then draft
+        const sourceIds: number[] = [];
+        if (publishedSource?.rows?.[0]?.id) sourceIds.push(publishedSource.rows[0].id);
+        if (draftSource?.rows?.[0]?.id) sourceIds.push(draftSource.rows[0].id);
+
+        let sourceRelations: { rows: Array<{ file_id: number; order: number }> } | null = null;
+        for (const srcId of sourceIds) {
+          const rels = await strapi.db.connection.raw(
+            `SELECT file_id, "order" FROM files_related_mph WHERE related_id = ? AND related_type = ? AND field = ?`,
+            [srcId, relatedType, fieldName]
+          );
+          if (rels?.rows?.length > 0) {
+            sourceRelations = rels;
+            break;
+          }
+        }
+
+        if (!sourceRelations?.rows?.length) continue;
+
+        // Get next sort order
+        const maxOrder = await strapi.db.connection.raw(
+          `SELECT COALESCE(MAX("order"), 0) as max_order FROM files_related_mph`
+        );
+        let nextOrder = ((maxOrder?.rows?.[0]?.max_order as number) || 0) + 1;
+
+        // Insert relations for target
+        for (const row of sourceRelations.rows) {
+          await strapi.db.connection.raw(
+            `INSERT INTO files_related_mph (file_id, related_id, related_type, field, "order") VALUES (?, ?, ?, ?, ?)`,
+            [row.file_id, targetId, relatedType, fieldName, nextOrder++]
+          );
+        }
+
+        strapi.log.info(
+          `Auto Translator: Copied media relation "${fieldName}" from source to entry ${targetId} (${contentType})`
+        );
+      }
+    } catch (error) {
+      strapi.log.warn(
+        `Auto Translator: Failed to copy media relations: ${(error as Error).message}`
+      );
     }
   },
 

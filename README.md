@@ -1,138 +1,133 @@
-# @devx/strapi-plugin-auto-translator
+# @devx-commerce/strapi-plugin-auto-translator
 
-A private Strapi v5 plugin for automated content translation across locales.
-Supports **OpenAI** (GPT-4o-mini) and **AWS Translate** as providers, configurable per project via `config/plugins.ts`.
+Automated translation plugin for Strapi v5. Translates content across locales using **OpenAI** or **AWS Translate**.
 
----
+## Features
 
-## Requirements
-
-- Strapi v5
-- i18n plugin enabled
-- Node.js 18–22
-
----
+- Translate any i18n-enabled content type (collection types and single types)
+- Supports **OpenAI** (GPT-4o-mini, GPT-4o, etc.) and **AWS Translate** providers
+- Admin panel button injected into the Content Manager edit view
+- Translate to a single locale or all locales at once
+- Configurable field exclusions (handles, slugs, URLs stay untranslated)
+- Auto-publish after translation (configurable)
+- Media snapshot/restore for Strapi v5 compatibility
+- Handles nested components, dynamic zones, and Blocks editor content
+- Content API routes for programmatic/batch translation
 
 ## Installation
 
-The repo is private to the devx-commerce GitHub org. Anyone with org access can install it directly — no npm registry or PAT setup needed beyond your existing GitHub credentials.
-
 ```bash
-yarn add "auto-translator-strapi-plugin@https://github.com/devx-commerce/auto-translator-strapi-plugin.git"
+# Install the plugin
+npm install @devx-commerce/strapi-plugin-auto-translator
+
+# Install your chosen translation provider SDK:
+npm install openai                      # for OpenAI
+# OR
+npm install @aws-sdk/client-translate   # for AWS Translate
 ```
 
-To pin a specific version:
-
-```bash
-yarn add "auto-translator-strapi-plugin@https://github.com/devx-commerce/auto-translator-strapi-plugin.git#v1.0.0"
-```
-
-### Local authentication
-
-If you are already authenticated with GitHub on your machine (via macOS Keychain, GitHub CLI, or SSH key), `yarn install` works with no extra steps.
-
-If not, configure git to use your GitHub credentials:
-
-```bash
-git config --global credential.helper osxkeychain   # Mac
-gh auth login                                         # or via GitHub CLI
-```
-
-### CI/CD authentication
-
-In GitHub Actions (or any CI environment), add a `GH_PAT` secret with a personal access token that has `repo` scope, then add this step before `yarn install`:
-
-```yaml
-- name: Authenticate git for private packages
-  run: git config --global url."https://${{ secrets.GH_PAT }}@github.com/".insteadOf "https://github.com/"
-```
-
----
+> **Note:** You need a `.npmrc` in your project root (or globally) with:
+> ```
+> @devx-commerce:registry=https://npm.pkg.github.com
+> ```
 
 ## Configuration
 
-Register the plugin in `config/plugins.ts`. No `resolve:` needed — it loads from `node_modules`.
+### `config/plugins.ts`
 
 ```typescript
 export default ({ env }) => ({
-  "auto-translator": {
+  'auto-translator': {
     enabled: true,
     config: {
-      // 'openai' (default) or 'aws'
-      translationProvider: env("TRANSLATION_PROVIDER", "openai"),
+      // Provider: 'openai' | 'aws'
+      translationProvider: env('TRANSLATION_PROVIDER', 'openai'),
 
+      // OpenAI settings (only needed if using OpenAI)
       openai: {
-        // apiKey: leave unset → falls back to OPENAI_API_KEY env var
-        model: "gpt-4o-mini",
+        apiKey: env('OPENAI_API_KEY'),
+        model: env('OPENAI_MODEL', 'gpt-4o-mini'),
         temperature: 0.1,
+        // Custom prompts (optional — use {sourceLang} and {targetLang} placeholders)
+        // systemPromptText: 'Your custom text translation prompt...',
+        // systemPromptHtml: 'Your custom HTML translation prompt...',
       },
 
+      // AWS settings (only needed if using AWS Translate)
       aws: {
-        // region: leave unset → falls back to AWS_REGION env var
-        // accessKeyId / secretAccessKey: leave unset → falls back to AWS_ACCESS_KEY_ID / AWS_ACCESS_SECRET env vars
+        region: env('AWS_REGION', 'us-east-1'),
+        accessKeyId: env('AWS_ACCESS_KEY_ID'),
+        secretAccessKey: env('AWS_ACCESS_SECRET'),
       },
 
-      // Field names never translated — copied as-is from source locale
+      // Fields that should never be translated (copied as-is from source)
+      // Any field containing "url" (case-insensitive) is also auto-excluded
       doNotTranslateFields: [
-        "handle",
-        "slug",
-        "url",
-        "href",
-        "cartUrl",
-        "videoId",
-        "youtubeVideoId",
+        'handle', 'slug', 'url', 'href',
+        // Add your project-specific fields:
+        // 'product_code', 'medusa_id', 'canonical_url',
       ],
 
-      // Regex patterns (strings) — any field name matching at least one is excluded
-      doNotTranslateFieldPatterns: ["url"],
+      // Auto-publish translated content (default: true)
+      autoPublish: true,
+
+      // Strapi v5 media workaround — preserves media relations during
+      // translation when Strapi recreates DB rows (default: true)
+      mediaSnapshotRestore: true,
     },
   },
 });
 ```
 
-### Config reference
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `translationProvider` | `'openai' \| 'aws'` | `'openai'` | Which provider to use |
-| `openai.apiKey` | `string` | `OPENAI_API_KEY` env var | OpenAI API key |
-| `openai.model` | `string` | `'gpt-4o-mini'` | OpenAI model |
-| `openai.temperature` | `number` | `0.1` | Sampling temperature |
-| `aws.region` | `string` | `AWS_REGION` env var | AWS region |
-| `aws.accessKeyId` | `string` | `AWS_ACCESS_KEY_ID` env var | AWS access key |
-| `aws.secretAccessKey` | `string` | `AWS_ACCESS_SECRET` env var | AWS secret |
-| `doNotTranslateFields` | `string[]` | See above | Exact field names to skip |
-| `doNotTranslateFieldPatterns` | `string[]` | `[]` | Regex patterns for field names to skip |
-
-### Environment variables
-
-Sensitive values are best kept in `.env` and left unset in `config/plugins.ts`:
+### `.env`
 
 ```bash
-# Choose provider
-TRANSLATION_PROVIDER=openai   # or 'aws'
+# Translation provider
+TRANSLATION_PROVIDER=openai
 
-# OpenAI
+# OpenAI (if using OpenAI provider)
 OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
 
-# AWS Translate
-AWS_ACCESS_KEY_ID=...
-AWS_ACCESS_SECRET=...
+# AWS (if using AWS Translate provider)
 AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_ACCESS_SECRET=...
 ```
-
----
 
 ## Usage
 
-1. Open any content entry with i18n enabled in the Strapi admin
-2. Click the **Translate** button in the top-right of the edit view
-3. Select the target locale (or "All locales")
-4. Click **Translate** — the page reloads when complete
+### Admin Panel
 
----
+1. Open any i18n-enabled content entry in the Content Manager
+2. Click the **Translate** button in the top-right area
+3. Select a target locale (or "All locales")
+4. Wait for translation to complete — the page will auto-reload
 
-## Field support
+### Content API (Programmatic)
+
+```bash
+# Get available locales
+GET /api/auto-translator/locales
+
+# Check if content type has i18n
+GET /api/auto-translator/check-i18n?contentType=api::article.article
+
+# Translate content
+POST /api/auto-translator/translate
+Content-Type: application/json
+
+{
+  "data": {
+    "contentType": "api::article.article",
+    "documentId": "abc123",
+    "sourceLocale": "en",
+    "targetLocale": "de"
+  }
+}
+```
+
+## Field Support
 
 | Field type | Behaviour |
 |------------|-----------|
@@ -144,60 +139,46 @@ AWS_REGION=us-east-1
 | `media`, `relation` | Copied as-is from source locale |
 | `boolean`, `integer`, `date`, etc. | Copied as-is |
 
-Fields in `doNotTranslateFields` or matching `doNotTranslateFieldPatterns` are always copied from the source locale unchanged.
+## Configuration Reference
 
----
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `translationProvider` | `'openai' \| 'aws'` | `'openai'` | Which translation service to use |
+| `openai.apiKey` | `string` | `env.OPENAI_API_KEY` | OpenAI API key |
+| `openai.model` | `string` | `'gpt-4o-mini'` | OpenAI model name |
+| `openai.temperature` | `number` | `0.1` | Sampling temperature (0-2) |
+| `openai.systemPromptText` | `string` | built-in | Custom prompt for text translation |
+| `openai.systemPromptHtml` | `string` | built-in | Custom prompt for HTML translation |
+| `aws.region` | `string` | `'us-east-1'` | AWS region |
+| `aws.accessKeyId` | `string` | `env.AWS_ACCESS_KEY_ID` | AWS access key (optional if using IAM roles) |
+| `aws.secretAccessKey` | `string` | `env.AWS_ACCESS_SECRET` | AWS secret key |
+| `doNotTranslateFields` | `string[]` | `['handle','slug','url','href']` | Fields to skip translation |
+| `autoPublish` | `boolean` | `true` | Auto-publish after translation |
+| `mediaSnapshotRestore` | `boolean` | `true` | Enable media relation preservation |
 
-## Releasing a new version
+## Releasing
 
 ```bash
-# 1. Make changes in the source files
-# 2. Build
-yarn build
+# 1. Build
+npm run build
 
-# 3. Bump version (patch / minor / major)
-npm version patch
-
-# 4. Commit dist + tag
-git add dist/ package.json
-git commit -m "release: v1.x.x"
-git tag v1.x.x
+# 2. Bump version + tag
+npm version patch   # or minor / major
 git push --follow-tags
 ```
 
-Consumer projects update by running:
+GitHub Actions will automatically publish to GitHub Packages when a `v*` tag is pushed.
 
+Consumer projects update with:
 ```bash
-yarn upgrade auto-translator-strapi-plugin
+npm update @devx-commerce/strapi-plugin-auto-translator
 ```
 
----
+## Requirements
 
-## API endpoints
-
-All endpoints are prefixed with `/auto-translator`.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/locales` | List available locales |
-| `GET` | `/check-i18n?contentType=` | Check if a content type has i18n enabled |
-| `POST` | `/translate` | Translate a document to a target locale |
-
-### POST `/translate` body
-
-```json
-{
-  "data": {
-    "contentType": "api::article.article",
-    "documentId": "abc123",
-    "sourceLocale": "en",
-    "targetLocale": "de",
-    "isSingleType": false
-  }
-}
-```
-
----
+- Strapi v5.0.0+
+- Node.js 18-22
+- i18n plugin enabled with at least 2 locales configured
 
 ## License
 

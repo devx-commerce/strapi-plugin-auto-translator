@@ -95,7 +95,15 @@ const translatorController = ({ strapi }: { strapi: Core.Strapi }) => ({
         return ctx.badRequest('documentId is required for collection types');
       }
 
+      const config = strapi.config.get('plugin::auto-translator') as any;
       const translatorService = strapi.plugin('auto-translator').service('translator');
+
+      // Step 0: Snapshot media file_ids BEFORE translation starts (if enabled).
+      // Strapi v5 may delete/recreate rows during update(), losing files_related_mph entries.
+      const mediaSnapshotEnabled = config?.mediaSnapshotRestore !== false;
+      const mediaSnapshot = mediaSnapshotEnabled
+        ? await translatorService.snapshotMediaFileIds(contentType, documentId)
+        : {};
 
       // Step 1: Extract content
       const translatableContent = await translatorService.extractTranslatableContent(
@@ -124,30 +132,64 @@ const translatorController = ({ strapi }: { strapi: Core.Strapi }) => ({
         isSingleType
       );
 
-      // Step 5: Auto-publish the translated locale
-      // For collection types use the documentId from the request (always present).
-      // For single types look it up from the saved entity or do a fresh findFirst.
-      let publishDocumentId: string | undefined = isSingleType
-        ? savedEntity?.documentId
-        : documentId;
+      // Step 5: Auto-publish the translated locale (if enabled)
+      const autoPublish = config?.autoPublish !== false;
+      let publishDocumentId: string | undefined;
 
-      if (!publishDocumentId && isSingleType) {
-        const entry = await strapi.documents(contentType as any).findFirst({});
-        publishDocumentId = entry?.documentId;
+      if (autoPublish) {
+        // For collection types use the documentId from the request (always present).
+        // For single types look it up from the saved entity or do a fresh findFirst.
+        publishDocumentId = isSingleType
+          ? savedEntity?.documentId
+          : documentId;
+
+        if (!publishDocumentId && isSingleType) {
+          const entry = await strapi.documents(contentType as any).findFirst({});
+          publishDocumentId = entry?.documentId;
+        }
+
+        if (publishDocumentId) {
+          await strapi.documents(contentType as any).publish({
+            documentId: publishDocumentId,
+            locale: targetLocale,
+          });
+          strapi.log.info(
+            `Auto Translator: Published ${contentType} documentId ${publishDocumentId} locale ${targetLocale}`
+          );
+
+          // Copy media relations to the newly published row
+          // Strapi v5 publish() creates a new row but doesn't copy files_related_mph entries
+          if (mediaSnapshotEnabled) {
+            const publishedEntry = await strapi.documents(contentType as any).findOne({
+              documentId: publishDocumentId,
+              locale: targetLocale,
+              status: 'published',
+            });
+            if (publishedEntry) {
+              const sourcePublished = await strapi.documents(contentType as any).findOne({
+                documentId: publishDocumentId,
+                locale: sourceLocale,
+                status: 'published',
+              });
+              if (sourcePublished) {
+                await translatorService.copyMediaRelations(
+                  contentType,
+                  sourcePublished as Record<string, unknown>,
+                  publishedEntry as Record<string, unknown>,
+                );
+              }
+            }
+          }
+        } else {
+          strapi.log.warn(
+            `Auto Translator: Could not publish – no documentId resolved (savedEntity: ${JSON.stringify(savedEntity)})`
+          );
+        }
       }
 
-      if (publishDocumentId) {
-        await strapi.documents(contentType as any).publish({
-          documentId: publishDocumentId,
-          locale: targetLocale,
-        });
-        strapi.log.info(
-          `Auto Translator: Published ${contentType} documentId ${publishDocumentId} locale ${targetLocale}`
-        );
-      } else {
-        strapi.log.warn(
-          `Auto Translator: Could not publish – no documentId resolved (savedEntity: ${JSON.stringify(savedEntity)})`
-        );
+      // Step 6: Restore media on published rows using the pre-translation snapshot (if enabled).
+      if (mediaSnapshotEnabled && publishDocumentId) {
+        await translatorService.restoreMediaForAllRows(contentType, publishDocumentId, sourceLocale, mediaSnapshot);
       }
 
       ctx.body = {

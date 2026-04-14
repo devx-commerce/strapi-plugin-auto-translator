@@ -1,11 +1,20 @@
 {
-  "name": "@devx/strapi-plugin-auto-translator",
+  "name": "@devx-commerce/strapi-plugin-auto-translator",
   "version": "1.0.0",
-  "description": "Automated translation plugin for Strapi v5 using OpenAI or AWS Translate",
+  "description": "Automated translation plugin for Strapi v5 — supports OpenAI and AWS Translate providers",
   "repository": {
     "type": "git",
-    "url": "https://github.com/devx/strapi-plugin-auto-translator.git"
+    "url": "https://github.com/devx-commerce/strapi-plugin-auto-translator.git"
   },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     "./strapi-admin": {
       "types": "./dist/admin/src/index.d.ts",
@@ -25,7 +34,8 @@
   },
   "scripts": {
     "build": "strapi-plugin build",
-    "watch": "strapi-plugin watch"
+    "watch": "strapi-plugin watch",
+    "verify": "strapi-plugin verify"
   },
   "strapi": {
     "name": "auto-translator",
@@ -34,10 +44,8 @@
     "kind": "plugin"
   },
   "dependencies": {
-    "@aws-sdk/client-translate": "^3.0.0",
     "@strapi/design-system": "^2.0.0-rc.16",
-    "@strapi/icons": "^2.0.0-rc.16",
-    "openai": "^6.32.0"
+    "@strapi/icons": "^2.0.0-rc.16"
   },
   "peerDependencies": {
     "@strapi/sdk-plugin": "^5.3.1",
@@ -45,13 +53,25 @@
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-router-dom": "^6.0.0",
-    "styled-components": "^6.0.0"
+    "styled-components": "^6.0.0",
+    "openai": ">=4.0.0",
+    "@aws-sdk/client-translate": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    },
+    "@aws-sdk/client-translate": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@strapi/sdk-plugin": "^5.3.1",
     "@strapi/strapi": "^5.0.0",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
+    "openai": "^6.32.0",
+    "@aws-sdk/client-translate": "^3.0.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-router-dom": "^6.0.0",
@@ -59,11 +79,11 @@
     "typescript": "^5.0.0"
   },
   "author": {
-    "name": "Music Tribe"
+    "name": "DevX Commerce"
   },
   "maintainers": [
     {
-      "name": "Music Tribe"
+      "name": "DevX Commerce"
     }
   ],
   "engines": {
